@@ -60,21 +60,34 @@ cxlsx_to_csv - convert Excel 2007 files to .CSV\n\
 \n\
 SYNOPSIS:\n\
 cxlsx_to_csv -if input.xlsx [-sh sheet_id] [-of output.csv]\n\
-    input.xlsx	input spreadsheet in Excel 2007 format (Office Open XML)\n\
-    sheet_id	name of the sheet within the workbook (default is first one)\n\
-    output.csv	output CSV file (default is STDOUT)\n\
+    input.xlsx        input spreadsheet in Excel 2007 format (Office Open XML)\n\
+    sheet_id        name of the sheet within the workbook (default is first one)\n\
+    output.csv        output CSV file (default is STDOUT)\n\
 \n\
 CAVEATS:\n\
 Separator in output CSV is comma.\n\
 ";
 
-int opt_if = 0;
-int opt_sh = 0;
-int opt_of = 0;
-
 // https://support.office.com/en-us/article/Excel-specifications-and-limits-1672b34d-7043-467e-8e27-269d656771c3&usg=AFQjCNHniIQ4KTIFQZ6efVfpDtETwU9Cmw
 // Total number of characters that an Excel cell can contain: 32,767
 #define BUFFSIZE 40960
+
+/*
+** An object used to parse XML content of XLSX
+*/
+typedef struct XLSXCtx XLSXCtx;
+struct XLSXCtx {
+  FILE  *outf;
+  int    xml_depth;      /* Current dept while parsing the XML tree */
+  char **shr_str;
+  int    shr_str_num, shr_str_cnt;
+  char  *shr_tv_val;
+  int    shr_si, shr_tv;
+  int    sheet_num_rows, sheet_num_cols;
+  int    current_row, current_col, expected_col;
+  int    lookup_v;
+  char   shr_buff[BUFFSIZE];
+};
 
 /*  
     XLSX files are zip files which contain several xml files with data:
@@ -290,134 +303,125 @@ void rangecolrow(char *string, int *outcol, int *outrow)
   *outrow = row;
 }
 
-char **shr_str;
-int shr_str_num, shr_str_cnt;
-char *shr_tv_val;
-int shr_si, shr_tv;
-char shr_buff[BUFFSIZE];
-
-char sheetname[64];
-FILE *outf;
-int sheet_num_rows, sheet_num_cols;
-int expected_col;
-int current_row, current_col;
-int lookup_v;
-
-int Depth;
-
 static void XMLCALL StartSharedStrings(void *data, const char *el, const char **attr)
 {
   int i;
-
-  if ((Depth == 0) && (!strcmp(el, "sst"))) {
+  XLSXCtx *ctx = data;
+  
+  if ((ctx->xml_depth == 0) && (!strcmp(el, "sst"))) {
     for (i = 0; attr[i]; i += 2) {
       if (!strcmp(attr[i], "uniqueCount")) {
         //printf(" %s='%s'\n", attr[i], attr[i + 1]);
-        shr_str_cnt = atoi(attr[i + 1]);
-        shr_str = malloc(sizeof(char *) * shr_str_cnt);
+        ctx->shr_str_cnt = atoi(attr[i + 1]);
+        ctx->shr_str = malloc(sizeof(char *) * ctx->shr_str_cnt);
       }
     }
   }
-  if ((Depth == 2) && (!strcmp(el, "t"))) {
-    shr_tv = 1;
-    shr_tv_val = shr_buff;
-    *shr_tv_val = 0;
+  if ((ctx->xml_depth == 2) && (!strcmp(el, "t"))) {
+    ctx->shr_tv = 1;
+    ctx->shr_tv_val = ctx->shr_buff;
+    *(ctx->shr_tv_val) = 0;
   }
-  Depth++;
+  ctx->xml_depth++;
 }
 
 static void XMLCALL EndSharedStrings(void *data, const char *el)
 {
-  Depth--;
-  if ((Depth == 2) && (!strcmp(el, "t"))) {
-    shr_tv = 0;
-    shr_str[shr_str_num] = strdup(shr_buff);
-    shr_str_num++;
+  XLSXCtx *ctx = data;
+
+  ctx->xml_depth--;
+  if ((ctx->xml_depth == 2) && (!strcmp(el, "t"))) {
+    ctx->shr_tv = 0;
+    ctx->shr_str[ctx->shr_str_num] = strdup(ctx->shr_buff);
+    ctx->shr_str_num++;
   }
 }
 
 static void XMLCALL ChrHndlr(void *data, const char *s, int len)
 {
   char *src;
+  XLSXCtx *ctx = data;
 
-  if (shr_tv) {
+  if (ctx->shr_tv) {
     src = (char *) s;
     while (len) {
-      *shr_tv_val++ = *src++;
+      *(ctx->shr_tv_val)++ = *src++;
       len--;
     }
-    *shr_tv_val = 0;
+    *(ctx->shr_tv_val) = 0;
   }
 }
 
 static void XMLCALL StartSheet(void *data, const char *el, const char **attr)
 {
   int i, j;
+  XLSXCtx *ctx = data;
 
-  if ((Depth == 1) && (!strcmp(el, "dimension"))) {
+  if ((ctx->xml_depth == 1) && (!strcmp(el, "dimension"))) {
     for (i = 0; attr[i]; i += 2) {
       if (!strcmp(attr[i], "ref")) {
         //fprintf(stderr, "dimension %s='%s'\n", attr[i], attr[i + 1]);
-        rangecolrow((char *) attr[i + 1], &sheet_num_cols, &sheet_num_rows);
-        //fprintf(stderr, "cols: %d  rows: %d\n", sheet_num_cols, sheet_num_rows);
+        rangecolrow((char *) attr[i + 1], &(ctx->sheet_num_cols), &(ctx->sheet_num_rows));
+        //fprintf(stderr, "cols: %d  rows: %d\n", ctx->sheet_num_cols, ctx->sheet_num_rows);
       }
     }
   }
-  if ((Depth == 2) && (!strcmp(el, "row"))) {
+  if ((ctx->xml_depth == 2) && (!strcmp(el, "row"))) {
     for (i = 0; attr[i]; i += 2) {
       if (!strcmp(attr[i], "r")) {
         //fprintf(stderr, "row %s='%s'\n", attr[i], attr[i + 1]);
-        expected_col = 1;
+        ctx->expected_col = 1;
       }
     }
   }
-  if ((Depth == 3) && (!strcmp(el, "c"))) {
-    lookup_v = 0;
+  if ((ctx->xml_depth == 3) && (!strcmp(el, "c"))) {
+    ctx->lookup_v = 0;
     for (i = 0; attr[i]; i += 2) {
       if (!strcmp(attr[i], "r")) {
         //fprintf(stderr, "c %s='%s'\n", attr[i], attr[i + 1]);
-        excelcolrow((char *) attr[i + 1], &current_col, &current_row);
-        for (j = expected_col; (j<current_col)&&(j<sheet_num_cols); j++)
-          putc(',', outf);
-        expected_col = current_col+1;
+        excelcolrow((char *) attr[i + 1], &(ctx->current_col), &(ctx->current_row));
+        for (j = ctx->expected_col; (j<ctx->current_col)&&(j<ctx->sheet_num_cols); j++)
+          putc(',', ctx->outf);
+        ctx->expected_col = ctx->current_col+1;
       }
       else if (!strcmp(attr[i], "t")) {
         //printf("c %s='%s'\n", attr[i], attr[i + 1]);
         if (*attr[i + 1] == 's') {
-          lookup_v = -1;
+          ctx->lookup_v = -1;
         }
-        //fprintf(stderr, "cols: %d  rows: %d\n", num_col, num_row);
+        //fprintf(stderr, "cols: %d  rows: %d\n", ctx->num_col, ctx->num_row);
       }
     }
   }
-  if ((Depth == 4) && (!strcmp(el, "v"))) {
-    shr_tv = 1;
-    shr_tv_val = shr_buff;
-    *shr_tv_val = 0;
+  if ((ctx->xml_depth == 4) && (!strcmp(el, "v"))) {
+    ctx->shr_tv = 1;
+    ctx->shr_tv_val = ctx->shr_buff;
+    *(ctx->shr_tv_val) = 0;
   }
-  Depth++;
+  ctx->xml_depth++;
 }
 
 static void XMLCALL EndSheet(void *data, const char *el)
 {
   int j;
+  XLSXCtx *ctx = data;
 
-  Depth--;
-  if ((Depth == 4) && (!strcmp(el, "v"))) {
-    shr_tv = 0;
-    if (lookup_v) {
-      //printf("v %s\n", shr_str[atoi(shr_buff)]);
-      output_csv(outf, ',', shr_str[atoi(shr_buff)], (current_col < sheet_num_cols));
+  ctx->xml_depth--;
+  if ((ctx->xml_depth == 4) && (!strcmp(el, "v"))) {
+    ctx->shr_tv = 0;
+    if (ctx->lookup_v) {
+      //printf("v %s\n", ctx->shr_str[atoi(ctx->shr_buff)]);
+      output_csv(ctx->outf, ',', ctx->shr_str[atoi(ctx->shr_buff)], (ctx->current_col < ctx->sheet_num_cols));
     }
     else {
-      //printf("v %s\n", shr_buff);
-      output_csv(outf, ',', shr_buff, (current_col < sheet_num_cols));
+      //printf("v %s\n", ctx->shr_buff);
+      output_csv(ctx->outf, ',', ctx->shr_buff, (ctx->current_col < ctx->sheet_num_cols));
     }
   }
-  if ((Depth == 2) && (!strcmp(el, "row"))) {
-    for (j = expected_col; j<sheet_num_cols; j++)
-      putc(',', outf);
-    fprintf(outf, "\r\x0A");
+  if ((ctx->xml_depth == 2) && (!strcmp(el, "row"))) {
+    for (j = ctx->expected_col; j<ctx->sheet_num_cols; j++)
+      putc(',', ctx->outf);
+    fprintf(ctx->outf, "\r\x0A");
     // TODO: Check if \r\x0A portable between Windows & UNIX
   }
 }
@@ -428,37 +432,43 @@ int main(int argc, char *argv[])
   size_t sheet_size;
   void *sheet_ptr;
   XML_Parser p;
+  XLSXCtx parse_ctx;
+  char sheetname[64];
+  
+  int opt_if = 0;
+  int opt_sh = 0;
+  int opt_of = 0;
 
   for (i=1; i<argc; i++) {
     if (i==opt_if)
       continue;
     if (!strcmp("-if", argv[i]))
       if ((i+1) < argc)
-	opt_if = i+1;
+        opt_if = i+1;
       else {
-	fputs("'-if' needs an Excel file name for input\n", stderr);
-	fputs(usage_str, stderr);
-	return 1;
+        fputs("'-if' needs an Excel file name for input\n", stderr);
+        fputs(usage_str, stderr);
+        return 1;
       }
     if (i==opt_sh)
       continue;
     if (!strcmp("-sh", argv[i]))
       if ((i+1) < argc)
-	opt_sh = i+1;
+        opt_sh = i+1;
       else {
-	fputs("'-sh' needs a sheet number\n", stderr);
-	fputs(usage_str, stderr);
-	return 1;
+        fputs("'-sh' needs a sheet number\n", stderr);
+        fputs(usage_str, stderr);
+        return 1;
       }
     if (i==opt_of)
       continue;
     if (!strcmp("-of", argv[i]))
       if ((i+1) < argc)
-	opt_of = i+1;
+        opt_of = i+1;
       else {
-	fputs("'-of' needs an CSV file name for output\n", stderr);
-	fputs(usage_str, stderr);
-	return 1;
+        fputs("'-of' needs an CSV file name for output\n", stderr);
+        fputs(usage_str, stderr);
+        return 1;
       }
   }
 
@@ -479,11 +489,11 @@ int main(int argc, char *argv[])
   }
   if (!opt_of) {
     //fputs("Missing '-of output.csv', hence assuming STDOUT.\n", stderr);
-    outf = stdout; 
+    parse_ctx.outf = stdout; 
   }
   else {
-    outf = fopen(argv[opt_of], "w");
-    if (!outf) {
+    parse_ctx.outf = fopen(argv[opt_of], "w");
+    if (!parse_ctx.outf) {
       fprintf(stderr, "Couldn't open output file '%s' .\n", argv[opt_of]);
       exit(-1);
     }
@@ -492,12 +502,13 @@ int main(int argc, char *argv[])
   // Process xl/sharedStrings.xml and load them into shr_str[]
   sheet_ptr = mz_zip_extract_archive_file_to_heap(argv[opt_if], "xl/sharedStrings.xml", &sheet_size, MZ_ZIP_FLAG_CASE_SENSITIVE);
   if (sheet_ptr) {
-    Depth = 0;
+    parse_ctx.xml_depth = 0;
     p = XML_ParserCreate(NULL);
     if (!p) {
       fprintf(stderr, "Couldn't allocate memory for parser\n");
       exit(-1);
     }
+    XML_SetUserData(p, &parse_ctx);
     XML_SetElementHandler(p, StartSharedStrings, EndSharedStrings);
     XML_SetCharacterDataHandler(p, ChrHndlr);
     if (XML_Parse(p, sheet_ptr, sheet_size, -1) == XML_STATUS_ERROR) {
@@ -507,8 +518,8 @@ int main(int argc, char *argv[])
       exit(-1);
     }
     XML_ParserFree(p);
-    //for (i = 0; i < shr_str_cnt; i++)
-    //  printf("%s\n", shr_str[i]);
+    //for (i = 0; i < ctx->shr_str_cnt; i++)
+    //  printf("%s\n", ctx->shr_str[i]);
   }
   else {
     //fprintf(stderr, "Warning: could not read xl/sharedStrings.xml\n");
@@ -519,13 +530,14 @@ int main(int argc, char *argv[])
   sprintf(sheetname, "xl/worksheets/sheet%d.xml", opt_sh);
   sheet_ptr = mz_zip_extract_archive_file_to_heap(argv[opt_if], sheetname, &sheet_size, MZ_ZIP_FLAG_CASE_SENSITIVE);
   if (sheet_ptr) {
-    Depth = 0;
-    shr_tv = 0;
+    parse_ctx.xml_depth = 0;
+    parse_ctx.shr_tv = 0;
     p = XML_ParserCreate(NULL);
     if (!p) {
       fprintf(stderr, "Couldn't allocate memory for parser\n");
       exit(-1);
     }
+    XML_SetUserData(p, &parse_ctx);
     XML_SetElementHandler(p, StartSheet, EndSheet);
     XML_SetCharacterDataHandler(p, ChrHndlr);
     if (XML_Parse(p, sheet_ptr, sheet_size, -1) == XML_STATUS_ERROR) {
