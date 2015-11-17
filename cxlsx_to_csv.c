@@ -432,13 +432,14 @@ int main(int argc, char *argv[])
   size_t sheet_size;
   void *sheet_ptr;
   XML_Parser p;
-  XLSXCtx parse_ctx;
+  XLSXCtx *parse_ctx;
   char sheetname[64];
   
   int opt_if = 0;
   int opt_sh = 0;
   int opt_of = 0;
 
+  parse_ctx = calloc(1, sizeof(XLSXCtx));
   for (i=1; i<argc; i++) {
     if (i==opt_if)
       continue;
@@ -489,11 +490,11 @@ int main(int argc, char *argv[])
   }
   if (!opt_of) {
     //fputs("Missing '-of output.csv', hence assuming STDOUT.\n", stderr);
-    parse_ctx.outf = stdout; 
+    parse_ctx->outf = stdout; 
   }
   else {
-    parse_ctx.outf = fopen(argv[opt_of], "w");
-    if (!parse_ctx.outf) {
+    parse_ctx->outf = fopen(argv[opt_of], "w");
+    if (!parse_ctx->outf) {
       fprintf(stderr, "Couldn't open output file '%s' .\n", argv[opt_of]);
       exit(-1);
     }
@@ -502,13 +503,13 @@ int main(int argc, char *argv[])
   // Process xl/sharedStrings.xml and load them into shr_str[]
   sheet_ptr = mz_zip_extract_archive_file_to_heap(argv[opt_if], "xl/sharedStrings.xml", &sheet_size, MZ_ZIP_FLAG_CASE_SENSITIVE);
   if (sheet_ptr) {
-    parse_ctx.xml_depth = 0;
+    parse_ctx->xml_depth = 0;
     p = XML_ParserCreate(NULL);
     if (!p) {
       fprintf(stderr, "Couldn't allocate memory for parser\n");
       exit(-1);
     }
-    XML_SetUserData(p, &parse_ctx);
+    XML_SetUserData(p, parse_ctx);
     XML_SetElementHandler(p, StartSharedStrings, EndSharedStrings);
     XML_SetCharacterDataHandler(p, ChrHndlr);
     if (XML_Parse(p, sheet_ptr, sheet_size, -1) == XML_STATUS_ERROR) {
@@ -530,14 +531,14 @@ int main(int argc, char *argv[])
   sprintf(sheetname, "xl/worksheets/sheet%d.xml", opt_sh);
   sheet_ptr = mz_zip_extract_archive_file_to_heap(argv[opt_if], sheetname, &sheet_size, MZ_ZIP_FLAG_CASE_SENSITIVE);
   if (sheet_ptr) {
-    parse_ctx.xml_depth = 0;
-    parse_ctx.shr_tv = 0;
+    parse_ctx->xml_depth = 0;
+    parse_ctx->shr_tv = 0;
     p = XML_ParserCreate(NULL);
     if (!p) {
       fprintf(stderr, "Couldn't allocate memory for parser\n");
       exit(-1);
     }
-    XML_SetUserData(p, &parse_ctx);
+    XML_SetUserData(p, parse_ctx);
     XML_SetElementHandler(p, StartSheet, EndSheet);
     XML_SetCharacterDataHandler(p, ChrHndlr);
     if (XML_Parse(p, sheet_ptr, sheet_size, -1) == XML_STATUS_ERROR) {
