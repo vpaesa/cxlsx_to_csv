@@ -105,14 +105,14 @@ struct XLSXCtx {
   The name of each sheet is in xl/workbook.xml
   The individual sheets are kept in xl/worksheets/sheet1.xml
   To save on space, Microsoft stores all the character literal values in one common xl/sharedStrings.xml dictionary file. The individual cell value found for this string in the actual sheet1.xml file is just an index into this dictionary.
-  Dates are stored as day number since 1900/01/01 (at least they are supposed to. I discovered that one has to subtract 2 from this number of days to get the correct conversion).
+  Dates are stored as day number since 1900/01/01.
   Time portion of the date is stored as a fraction of a day, so it has to be multiplied by 60*60*24 (86400) to get the actual number os seconds.
   Microsoft does not store empty cells or rows in xl/worksheets/sheet1.xml, so any gaps between values have to be taken care by the code.
   To figure out the number of skipped columns one need to be able to figure out the distance between, say, cell "AB67" and "C67". The way columns are named: A through Z, then AA through AZ, then AAA through AAZ, etc., suggests that we may assume they are using a base-26 system and therefore use a simple conversion method from a base-26 to the decimal system and then use subtraction to find out the number of commas between columns.
     
 -------------------------------------------------------------------------
 xl/sharedStrings.xml has in "sst:uniqueCount" a count of the number of unique strings
-unzip -c 3x2.xlsx xl/sharedStrings.xml | tidy -xml
+unzip -c 3x2.xlsx xl/sharedStrings.xml | tidy -indent -xml
 -------------------------------------------------------------------------
 <sst count="9" uniqueCount="5">
   <si>
