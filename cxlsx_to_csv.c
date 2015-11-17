@@ -311,7 +311,7 @@ static void XMLCALL StartSharedStrings(void *data, const char *el, const char **
   if ((ctx->xml_depth == 0) && (!strcmp(el, "sst"))) {
     for (i = 0; attr[i]; i += 2) {
       if (!strcmp(attr[i], "uniqueCount")) {
-        //printf(" %s='%s'\n", attr[i], attr[i + 1]);
+        //fprintf(stderr, " %s='%s'\n", attr[i], attr[i + 1]);
         ctx->shr_str_cnt = atoi(attr[i + 1]);
         ctx->shr_str = malloc(sizeof(char *) * ctx->shr_str_cnt);
       }
@@ -385,7 +385,7 @@ static void XMLCALL StartSheet(void *data, const char *el, const char **attr)
         ctx->expected_col = ctx->current_col+1;
       }
       else if (!strcmp(attr[i], "t")) {
-        //printf("c %s='%s'\n", attr[i], attr[i + 1]);
+        //fprintf(stderr, "c %s='%s'\n", attr[i], attr[i + 1]);
         if (*attr[i + 1] == 's') {
           ctx->lookup_v = -1;
         }
@@ -410,11 +410,11 @@ static void XMLCALL EndSheet(void *data, const char *el)
   if ((ctx->xml_depth == 4) && (!strcmp(el, "v"))) {
     ctx->shr_tv = 0;
     if (ctx->lookup_v) {
-      //printf("v %s\n", ctx->shr_str[atoi(ctx->shr_buff)]);
+      //fprintf(stderr, "v %s\n", ctx->shr_str[atoi(ctx->shr_buff)]);
       output_csv(ctx->outf, ',', ctx->shr_str[atoi(ctx->shr_buff)], (ctx->current_col < ctx->sheet_num_cols));
     }
     else {
-      //printf("v %s\n", ctx->shr_buff);
+      //fprintf(stderr, "v %s\n", ctx->shr_buff);
       output_csv(ctx->outf, ',', ctx->shr_buff, (ctx->current_col < ctx->sheet_num_cols));
     }
   }
