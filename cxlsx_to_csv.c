@@ -6,7 +6,9 @@
    cxlsx_to_csv -if input.xlsx [-sh sheet_id] [-of output.csv]
   
  COMPILATION:
-   cc -o cxlsx_to_csv cxlsx_to_csv.c -l expat
+   cc -DCONFIG_EXPAT -o cxlsx_to_csv cxlsx_to_csv.c -l expat
+   or
+   cc --DCONFIG_MXML -o cxlsx_to_csv cxlsx_to_csv.c -l mxml
    
  Must be used with Expat compiled for UTF-8 output.
 
@@ -37,8 +39,14 @@ typedef unsigned short uint16;
 typedef unsigned int uint;
 
 #include <stdio.h>
-#include <expat.h>
 #include <string.h>
+
+#ifdef CONFIG_MXML
+#include <mxml.h>
+#endif /* CONFIG_MXML */
+
+#ifdef CONFIG_EXPAT
+#include <expat.h>
 
 #if defined(__amigaos__) && defined(__USE_INLINE__)
 #include <proto/expat.h>
@@ -53,6 +61,7 @@ typedef unsigned int uint;
 #else
 #define XML_FMT_INT_MOD "l"
 #endif
+#endif /* CONFIG_EXPAT */
 
 static char *usage_str = "\n\
 NAME:\n\
@@ -81,13 +90,16 @@ struct XLSXCtx {
   int    xml_depth;      /* Current dept while parsing the XML tree */
   char **shr_str;
   int    shr_str_num, shr_str_cnt;
-  char  *shr_tv_val;
-  int    shr_si, shr_tv;
   int    sheet_num_rows, sheet_num_cols;
   int    current_row, current_col, expected_col;
   int    lookup_v;
+#ifdef CONFIG_EXPAT
+  char  *shr_tv_val;
+  int    shr_tv;
   char   shr_buff[BUFFSIZE];
+#endif /* CONFIG_EXPAT */
 };
+
 
 /*  
     XLSX files are zip files which contain several xml files with data:
@@ -303,6 +315,7 @@ void rangecolrow(char *string, int *outcol, int *outrow)
   *outrow = row;
 }
 
+#ifdef CONFIG_EXPAT
 static void XMLCALL StartSharedStrings(void *data, const char *el, const char **attr)
 {
   int i;
@@ -368,7 +381,8 @@ static void XMLCALL StartSheet(void *data, const char *el, const char **attr)
   }
   if ((ctx->xml_depth == 2) && (!strcmp(el, "row"))) {
     for (i = 0; attr[i]; i += 2) {
-      if (!strcmp(attr[i], "r")) {
+      // (!strcmp(attr[i], "r")
+      if ((*attr[i] == 'r') && attr[i][1] == '\0') {
         //fprintf(stderr, "row %s='%s'\n", attr[i], attr[i + 1]);
         ctx->expected_col = 1;
       }
@@ -389,11 +403,11 @@ static void XMLCALL StartSheet(void *data, const char *el, const char **attr)
         if (*attr[i + 1] == 's') {
           ctx->lookup_v = -1;
         }
-        //fprintf(stderr, "cols: %d  rows: %d\n", ctx->num_col, ctx->num_row);
+        //fprintf(stderr, "cols: %d  rows: %d\n", ctx->sheet_num_cols, ctx->sheet_num_rows);
       }
     }
   }
-  if ((ctx->xml_depth == 4) && (!strcmp(el, "v"))) {
+  if ((ctx->xml_depth == 4) && (*el == 'v') && (el[1] == '\0')) {
     ctx->shr_tv = 1;
     ctx->shr_tv_val = ctx->shr_buff;
     *(ctx->shr_tv_val) = 0;
@@ -407,7 +421,7 @@ static void XMLCALL EndSheet(void *data, const char *el)
   XLSXCtx *ctx = data;
 
   ctx->xml_depth--;
-  if ((ctx->xml_depth == 4) && (!strcmp(el, "v"))) {
+  if ((ctx->xml_depth == 4) && (*el == 'v') && (el[1] == '\0')) {
     ctx->shr_tv = 0;
     if (ctx->lookup_v) {
       //fprintf(stderr, "v %s\n", ctx->shr_str[atoi(ctx->shr_buff)]);
@@ -425,15 +439,133 @@ static void XMLCALL EndSheet(void *data, const char *el)
     // TODO: Check if \r\x0A portable between Windows & UNIX
   }
 }
+#endif /* CONFIG_EXPAT */
+
+#ifdef CONFIG_MXML
+static void SharedStrings(mxml_node_t *node, mxml_sax_event_t event, void *data)
+{
+  const char *el, *uniqueCount, *value;
+  XLSXCtx *ctx = data;
+  
+  if (event == MXML_SAX_ELEMENT_OPEN) {
+    if (ctx->xml_depth == 0) {
+      el = mxmlGetElement(node);
+      if (!strcmp(el, "sst")) {
+        uniqueCount = mxmlElementGetAttr(node, "uniqueCount");
+        if (uniqueCount) {
+          //fprintf(stderr, " uniqueCount='%s'\n", uniqueCount);
+          ctx->shr_str_cnt = atoi(uniqueCount);
+          ctx->shr_str = malloc(sizeof(char *) * ctx->shr_str_cnt);
+        }
+      }
+    }
+    ctx->xml_depth++;
+    //fprintf(stderr, "shared strings '%s' %d\n", el, ctx->xml_depth);
+  }
+  else if (event == MXML_SAX_DATA) {
+    if (ctx->xml_depth == 3) {
+      el = mxmlGetElement(mxmlGetParent(node));
+      if (!strcmp(el, "t")) {
+        value = mxmlGetOpaque(mxmlGetParent(node));
+        //fprintf(stderr, " shrStr[%d]='%s'\n", ctx->shr_str_num, value);
+        ctx->shr_str[ctx->shr_str_num] = strdup(value);
+        ctx->shr_str_num++;
+      }
+    }
+  }
+  else if (event == MXML_SAX_ELEMENT_CLOSE) {
+    ctx->xml_depth--;
+  }
+}
+
+static void Sheet(mxml_node_t *node, mxml_sax_event_t event, void *data)
+{
+  int i, j;
+  const char *el, *ref, *r, *t, *value;
+  XLSXCtx *ctx = data;
+
+  if (event == MXML_SAX_ELEMENT_OPEN) {
+    el = mxmlGetElement(node);
+    if ((ctx->xml_depth == 1) && (!strcmp(el, "dimension"))) {
+      ref = mxmlElementGetAttr(node, "ref");
+      if (ref) {
+        rangecolrow((char *)ref, &(ctx->sheet_num_cols), &(ctx->sheet_num_rows));
+        //fprintf(stderr, " dimension ref='%s'\n", ref);
+        //fprintf(stderr, "cols: %d  rows: %d\n", ctx->sheet_num_cols, ctx->sheet_num_rows);
+      }
+    }
+    if ((ctx->xml_depth == 2) && (!strcmp(el, "row"))) {
+      r = mxmlElementGetAttr(node, "r");
+      if (r) {
+        //fprintf(stderr, "row r='%s'\n", r);
+        ctx->expected_col = 1;
+      }
+    }
+    if ((ctx->xml_depth == 3) && (!strcmp(el, "c"))) {
+      ctx->lookup_v = 0;
+      r = mxmlElementGetAttr(node, "r");
+      if (r) {
+        //fprintf(stderr, "c r='%s'\n", r);
+        excelcolrow((char *)r, &(ctx->current_col), &(ctx->current_row));
+        for (j = ctx->expected_col; (j<ctx->current_col)&&(j<ctx->sheet_num_cols); j++)
+          putc(',', ctx->outf);
+        ctx->expected_col = ctx->current_col+1;
+      }
+      t = mxmlElementGetAttr(node, "t");
+      if (t) {
+        //fprintf(stderr, "c t='%s'\n", t);
+        if (*t == 's') {
+          ctx->lookup_v = -1;
+        }
+        //fprintf(stderr, "cols: %d  rows: %d\n", ctx->sheet_num_cols, ctx->sheet_num_rows);
+      }
+    }
+    ctx->xml_depth++;
+  }
+  else if (event == MXML_SAX_DATA) {
+    if (ctx->xml_depth == 5) {
+      el = mxmlGetElement(mxmlGetParent(node));
+      if (!strcmp(el, "v")) {
+        value = mxmlGetOpaque(mxmlGetParent(node));
+        if (ctx->lookup_v) {
+          //fprintf(stderr, "v %s\n", ctx->shr_str[atoi(value)]);
+          output_csv(ctx->outf, ',', ctx->shr_str[atoi(value)], (ctx->current_col < ctx->sheet_num_cols));
+        }
+        else {
+          //fprintf(stderr, "v %s\n", value);
+          output_csv(ctx->outf, ',', value, (ctx->current_col < ctx->sheet_num_cols));
+        }
+      }
+    }
+  }
+  else if (event == MXML_SAX_ELEMENT_CLOSE) {
+    ctx->xml_depth--;
+    if (ctx->xml_depth == 2) {
+      el = mxmlGetElement(node);
+      if (!strcmp(el, "row")) {
+        for (j = ctx->expected_col; j<ctx->sheet_num_cols; j++)
+          putc(',', ctx->outf);
+        fprintf(ctx->outf, "\r\x0A");
+        // TODO: Check if \r\x0A portable between Windows & UNIX
+      }
+    }
+  }
+}
+#endif /* CONFIG_MXML */
 
 int main(int argc, char *argv[])
 {
   int i;
   size_t sheet_size;
   void *sheet_ptr;
-  XML_Parser p;
   XLSXCtx *parse_ctx;
   char sheetname[64];
+#ifdef CONFIG_EXPAT
+  XML_Parser p;
+#endif /* CONFIG_EXPAT */
+#ifdef CONFIG_MXML
+  mxml_node_t *root_node;
+#endif /* CONFIG_MXML */
   
   int opt_if = 0;
   int opt_sh = 0;
@@ -504,6 +636,7 @@ int main(int argc, char *argv[])
   sheet_ptr = mz_zip_extract_archive_file_to_heap(argv[opt_if], "xl/sharedStrings.xml", &sheet_size, MZ_ZIP_FLAG_CASE_SENSITIVE);
   if (sheet_ptr) {
     parse_ctx->xml_depth = 0;
+#ifdef CONFIG_EXPAT  
     p = XML_ParserCreate(NULL);
     if (!p) {
       fprintf(stderr, "Couldn't allocate memory for parser\n");
@@ -521,6 +654,10 @@ int main(int argc, char *argv[])
     XML_ParserFree(p);
     //for (i = 0; i < ctx->shr_str_cnt; i++)
     //  printf("%s\n", ctx->shr_str[i]);
+#endif /* CONFIG_EXPAT */
+#ifdef CONFIG_MXML
+    root_node = mxmlSAXLoadString(NULL, sheet_ptr, MXML_OPAQUE_CALLBACK, SharedStrings, parse_ctx);
+#endif /* CONFIG_MXML */
   }
   else {
     //fprintf(stderr, "Warning: could not read xl/sharedStrings.xml\n");
@@ -532,6 +669,7 @@ int main(int argc, char *argv[])
   sheet_ptr = mz_zip_extract_archive_file_to_heap(argv[opt_if], sheetname, &sheet_size, MZ_ZIP_FLAG_CASE_SENSITIVE);
   if (sheet_ptr) {
     parse_ctx->xml_depth = 0;
+#ifdef CONFIG_EXPAT  
     parse_ctx->shr_tv = 0;
     p = XML_ParserCreate(NULL);
     if (!p) {
@@ -548,6 +686,10 @@ int main(int argc, char *argv[])
       exit(-1);
     }
     XML_ParserFree(p);
+#endif /* CONFIG_EXPAT */
+#ifdef CONFIG_MXML
+    root_node = mxmlSAXLoadString(NULL, sheet_ptr, MXML_OPAQUE_CALLBACK, Sheet, parse_ctx);
+#endif /* CONFIG_MXML */
   }
   else {
     fprintf(stderr, "Error: could not read sheet number %d.\n", opt_sh);
