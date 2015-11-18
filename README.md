@@ -22,7 +22,7 @@ cxlsx_to_csv -if input.xlsx [-sh sheet_id] [-of output.csv]
 
 | Tool | Command | Time (real/user/sys)|
 |:------------ |:------------|:--|
-| [cxlsx_to_csv](https://github.com/vpaesa/cxlsx_to_csv) ([expat](http://expat.sourceforge.net/))| `cxlsx_to_csv -if a.xlsx -of a.csv` | `3.036s/2.836s/0.200s` |
+| [cxlsx_to_csv](https://github.com/vpaesa/cxlsx_to_csv) ([expat](http://expat.sourceforge.net/))| `cxlsx_to_csv -if a.xlsx -of a.csv` | `2.886s/2.784s/0.100s` |
 | [cxlsx_to_csv](https://github.com/vpaesa/cxlsx_to_csv) ([Mini-XML](http://www.msweet.org/projects.php?Z3))| `cxlsx_to_csv -if a.xlsx -of a.csv` | `4.802s/4.732s/0.072s` |
 | [Gnumeric](http://www.gnumeric.org/) | `ssconvert --export-type=Gnumeric_stf:stf_assistant -O 'eol=windows separator=, format=raw transliterate-mode=escape quoting-mode=auto' a.xlsx a.csv` | `11.735s/11.544s/0.196s` |
 | [LibreOffice](https://www.libreoffice.org/) | `soffice --headless --convert-to csv a.xlsx` | `14.103s/17.388s/0.644s` |
