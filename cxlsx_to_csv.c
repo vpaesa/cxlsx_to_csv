@@ -253,7 +253,7 @@ static const char needCsvQuote[] = {
 ** the null value.  Strings are quoted if necessary.  The separator
 ** is only issued if bSep is true.
 */
-static void output_csv(FILE *out, const char colSeparator, const char *z, int bSep)
+static inline void output_csv(FILE *out, const char colSeparator, const char *z, int bSep)
 {
   if (z==0) {
     //fprintf(out,"%s","");
@@ -282,7 +282,7 @@ static void output_csv(FILE *out, const char colSeparator, const char *z, int bS
   }
 }
 
-void excelcolrow(char *string, int *outcol, int *outrow)
+static inline void excelcolrow(char *string, int *outcol, int *outrow)
 {
   int i, col, base;
 
@@ -300,7 +300,7 @@ void excelcolrow(char *string, int *outcol, int *outrow)
   return;
 }
 
-void rangecolrow(char *string, int *outcol, int *outrow)
+static inline void rangecolrow(char *string, int *outcol, int *outrow)
 {
   int col, row;
   char *coloninstr;
