@@ -8,7 +8,9 @@
  COMPILATION:
    cc -DCONFIG_EXPAT -o cxlsx_to_csv cxlsx_to_csv.c -l expat
    or
-   cc --DCONFIG_MXML -o cxlsx_to_csv cxlsx_to_csv.c -l mxml
+   cc -DCONFIG_MXML -o cxlsx_to_csv cxlsx_to_csv.c -l mxml
+   or
+   cc -DCONFIG_PARSIFAL -o cxlsx_to_csv cxlsx_to_csv.c -lparsifal
    
  Must be used with Expat compiled for UTF-8 output.
 
@@ -40,6 +42,10 @@ typedef unsigned int uint;
 
 #include <stdio.h>
 #include <string.h>
+
+#ifdef CONFIG_PARSIFAL
+#include "libparsifal/parsifal.h"
+#endif /* CONFIG_PARSIFAL */
 
 #ifdef CONFIG_MXML
 #include <mxml.h>
@@ -93,11 +99,15 @@ struct XLSXCtx {
   int    sheet_num_rows, sheet_num_cols;
   int    current_row, current_col, expected_col;
   int    lookup_v;
-#ifdef CONFIG_EXPAT
+#ifdef CONFIG_PARSIFAL
+  XMLCH *sheet_cur_ptr;
+  XMLCH *sheet_end_ptr;
+#endif /* CONFIG_PARSIFAL */
+#ifndef CONFIG_MXML
   char  *shr_tv_val;
   int    shr_tv;
   char   shr_buff[BUFFSIZE];
-#endif /* CONFIG_EXPAT */
+#endif /* Not(CONFIG_MXML) = CONFIG_EXPAT || CONFIG_PARSIFAL */
 };
 
 
@@ -553,6 +563,165 @@ static void Sheet(mxml_node_t *node, mxml_sax_event_t event, void *data)
 }
 #endif /* CONFIG_MXML */
 
+#ifdef CONFIG_PARSIFAL
+int StartSharedStrings(void *data, const XMLCH *uri, const XMLCH *localName, const XMLCH *el, LPXMLVECTOR atts)
+{
+  int i;
+  LPXMLRUNTIMEATT att;
+  XLSXCtx *ctx = data;
+  
+  if ((ctx->xml_depth == 0) && (!strcmp(el, "sst"))) {
+    for (i = 0; i<atts->length; i++) {
+      att = (LPXMLRUNTIMEATT) XMLVector_Get(atts, i);
+      if (!strcmp(att->qname, "uniqueCount")) {
+        //fprintf(stderr, " %s='%s'\n", att->qname, att->value);
+        ctx->shr_str_cnt = atoi(att->value);
+        ctx->shr_str = malloc(sizeof(char *) * ctx->shr_str_cnt);
+      }
+    }
+  }
+  if ((ctx->xml_depth == 2) && (!strcmp(el, "t"))) {
+    ctx->shr_tv = 1;
+    ctx->shr_tv_val = ctx->shr_buff;
+    *(ctx->shr_tv_val) = 0;
+  }
+  ctx->xml_depth++;
+  return 0;
+}
+
+int EndSharedStrings(void *data, const XMLCH *uri, const XMLCH *localName, const XMLCH *el)
+{
+  XLSXCtx *ctx = data;
+
+  ctx->xml_depth--;
+  if ((ctx->xml_depth == 2) && (!strcmp(el, "t"))) {
+    ctx->shr_tv = 0;
+    ctx->shr_str[ctx->shr_str_num] = strdup(ctx->shr_buff);
+    ctx->shr_str_num++;
+  }
+  return 0;
+}
+
+int ChrHndlr(void *data, const XMLCH *s, int len)
+{
+  XMLCH *src;
+  XLSXCtx *ctx = data;
+
+  if (ctx->shr_tv) {
+    src = (XMLCH *) s;
+    while (len) {
+      *(ctx->shr_tv_val)++ = *src++;
+      len--;
+    }
+    *(ctx->shr_tv_val) = 0;
+  }
+  return 0;
+}
+
+int StartSheet(void *data, const XMLCH *uri, const XMLCH *localName, const XMLCH *el, LPXMLVECTOR atts)
+{
+  int i, j;
+  LPXMLRUNTIMEATT att;
+  XLSXCtx *ctx = data;
+
+  if ((ctx->xml_depth == 1) && (!strcmp(el, "dimension"))) {
+    for (i = 0; i<atts->length; i++) {
+      att = (LPXMLRUNTIMEATT) XMLVector_Get(atts, i);
+      if (!strcmp(att->qname, "ref")) {
+        //fprintf(stderr, "dimension %s='%s'\n", att->qname, att->value);
+        rangecolrow((char *) att->value, &(ctx->sheet_num_cols), &(ctx->sheet_num_rows));
+        //fprintf(stderr, "cols: %d  rows: %d\n", ctx->sheet_num_cols, ctx->sheet_num_rows);
+      }
+    }
+  }
+  if ((ctx->xml_depth == 2) && (!strcmp(el, "row"))) {
+    for (i = 0; i<atts->length; i++) {
+      att = (LPXMLRUNTIMEATT) XMLVector_Get(atts, i);
+      if (!strcmp(att->qname, "r")) {
+        //fprintf(stderr, "row %s='%s'\n", att->qname, att->value);
+        ctx->expected_col = 1;
+      }
+    }
+  }
+  if ((ctx->xml_depth == 3) && (!strcmp(el, "c"))) {
+    ctx->lookup_v = 0;
+    for (i = 0; i<atts->length; i++) {
+      att = (LPXMLRUNTIMEATT) XMLVector_Get(atts, i);
+      if (!strcmp(att->qname, "r")) {
+        //fprintf(stderr, "c %s='%s'\n", att->qname, att->value);
+        excelcolrow((char *) att->value, &(ctx->current_col), &(ctx->current_row));
+        for (j = ctx->expected_col; (j<ctx->current_col)&&(j<ctx->sheet_num_cols); j++)
+          putc(',', ctx->outf);
+        ctx->expected_col = ctx->current_col+1;
+      }
+      else if (!strcmp(att->qname, "t")) {
+        //fprintf(stderr, "c %s='%s'\n", att->qname, att->value);
+        if (*(att->value) == 's') {
+          ctx->lookup_v = -1;
+        }
+        //fprintf(stderr, "cols: %d  rows: %d\n", ctx->sheet_num_cols, ctx->sheet_num_rows);
+      }
+    }
+  }
+  if ((ctx->xml_depth == 4) && (*el == 'v') && (el[1] == '\0')) {
+    ctx->shr_tv = 1;
+    ctx->shr_tv_val = ctx->shr_buff;
+    *(ctx->shr_tv_val) = 0;
+  }
+  ctx->xml_depth++;
+  return 0;
+}
+
+int EndSheet(void *data, const XMLCH *uri, const XMLCH *localName, const XMLCH *el)
+{
+  int j;
+  XLSXCtx *ctx = data;
+
+  ctx->xml_depth--;
+  if ((ctx->xml_depth == 4) && (*el == 'v') && (el[1] == '\0')) {
+    ctx->shr_tv = 0;
+    if (ctx->lookup_v) {
+      //fprintf(stderr, "v %s\n", ctx->shr_str[atoi(ctx->shr_buff)]);
+      output_csv(ctx->outf, ',', ctx->shr_str[atoi(ctx->shr_buff)], (ctx->current_col < ctx->sheet_num_cols));
+    }
+    else {
+      //fprintf(stderr, "v %s\n", ctx->shr_buff);
+      output_csv(ctx->outf, ',', ctx->shr_buff, (ctx->current_col < ctx->sheet_num_cols));
+    }
+  }
+  if ((ctx->xml_depth == 2) && (!strcmp(el, "row"))) {
+    for (j = ctx->expected_col; j<ctx->sheet_num_cols; j++)
+      putc(',', ctx->outf);
+    fprintf(ctx->outf, "\r\x0A");
+    // TODO: Check if \r\x0A portable between Windows & UNIX
+  }
+  return 0;
+}
+
+int GetSheetBytes(BYTE *buf, int cBytes, int *cBytesActual, void *data)
+{
+  XLSXCtx *ctx = data;
+  char str[64];
+
+  //snprintf(str, 64, "%s", ctx->sheet_cur_ptr);
+  //fprintf(stderr, "GetSheetBytes %p %d '%s'\n", ctx->sheet_cur_ptr, cBytes, str);
+  if ((ctx->sheet_end_ptr - ctx->sheet_cur_ptr) >= cBytes) {
+    memcpy(buf, ctx->sheet_cur_ptr, cBytes);
+    *cBytesActual = cBytes;
+    ctx->sheet_cur_ptr += cBytes;
+    return 0;
+  }
+  else {
+    *cBytesActual = ctx->sheet_end_ptr - ctx->sheet_cur_ptr;
+    memcpy(buf, ctx->sheet_cur_ptr, *cBytesActual);
+    ctx->sheet_cur_ptr = ctx->sheet_end_ptr;
+    return 1;
+  }
+}
+
+void ErrorHandler(LPXMLPARSER parser) {} /* dummy, only for switching ErrorString etc. on */
+#endif /* CONFIG_PARSIFAL */
+
 int main(int argc, char *argv[])
 {
   int i;
@@ -566,6 +735,9 @@ int main(int argc, char *argv[])
 #ifdef CONFIG_MXML
   mxml_node_t *root_node;
 #endif /* CONFIG_MXML */
+#ifdef CONFIG_PARSIFAL
+  LPXMLPARSER parser;
+#endif /* CONFIG_PARSIFAL */
   
   int opt_if = 0;
   int opt_sh = 0;
@@ -658,6 +830,25 @@ int main(int argc, char *argv[])
 #ifdef CONFIG_MXML
     root_node = mxmlSAXLoadString(NULL, sheet_ptr, MXML_OPAQUE_CALLBACK, SharedStrings, parse_ctx);
 #endif /* CONFIG_MXML */
+#ifdef CONFIG_PARSIFAL
+    if (!XMLParser_Create(&parser)) {
+      printf("Error creating parser!\n");
+      exit(-1);
+    }
+    _XMLParser_SetFlag(parser, XMLFLAG_NAMESPACES, 0);
+    _XMLParser_SetFlag(parser, XMLFLAG_EXTERNAL_GENERAL_ENTITIES, 0);
+    _XMLParser_SetFlag(parser, XMLFLAG_PRESERVE_WS_ATTRIBUTES, -1);
+    parser->errorHandler = ErrorHandler;
+    parser->startElementHandler = StartSharedStrings;
+    parser->endElementHandler = EndSharedStrings;
+    parser->charactersHandler = ChrHndlr;
+    parser->UserData = parse_ctx;
+    parse_ctx->sheet_cur_ptr = sheet_ptr;
+    parse_ctx->sheet_end_ptr = sheet_ptr + sheet_size;
+    if (!XMLParser_Parse(parser, GetSheetBytes, parse_ctx, "UTF-8"))
+      printf("ShareStrings Error: %s\nLine: %d Col: %d\n", parser->ErrorString, parser->ErrorLine, parser->ErrorColumn);
+    XMLParser_Free(parser);
+#endif /* CONFIG_PARSIFAL */
   }
   else {
     //fprintf(stderr, "Warning: could not read xl/sharedStrings.xml\n");
@@ -690,6 +881,25 @@ int main(int argc, char *argv[])
 #ifdef CONFIG_MXML
     root_node = mxmlSAXLoadString(NULL, sheet_ptr, MXML_OPAQUE_CALLBACK, Sheet, parse_ctx);
 #endif /* CONFIG_MXML */
+#ifdef CONFIG_PARSIFAL
+    if (!XMLParser_Create(&parser)) {
+      printf("Error creating parser!\n");
+      exit(-1);
+    }
+    _XMLParser_SetFlag(parser, XMLFLAG_NAMESPACES, 0);
+    _XMLParser_SetFlag(parser, XMLFLAG_EXTERNAL_GENERAL_ENTITIES, 0);
+    _XMLParser_SetFlag(parser, XMLFLAG_PRESERVE_WS_ATTRIBUTES, -1);
+    parser->errorHandler = ErrorHandler;
+    parser->startElementHandler = StartSheet;
+    parser->endElementHandler = EndSheet;
+    parser->charactersHandler = ChrHndlr;
+    parser->UserData = parse_ctx;
+    parse_ctx->sheet_cur_ptr = sheet_ptr;
+    parse_ctx->sheet_end_ptr = sheet_ptr + sheet_size;
+    if (!XMLParser_Parse(parser, GetSheetBytes, parse_ctx, "UTF-8"))
+      printf("Sheet Error: %s\nLine: %d Col: %d\n", parser->ErrorString, parser->ErrorLine, parser->ErrorColumn);
+    XMLParser_Free(parser);
+#endif /* CONFIG_PARSIFAL */
   }
   else {
     fprintf(stderr, "Error: could not read sheet number %d.\n", opt_sh);
