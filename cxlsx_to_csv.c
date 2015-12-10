@@ -11,6 +11,8 @@
    cc -DCONFIG_MXML -o cxlsx_to_csv cxlsx_to_csv.c -l mxml
    or
    cc -DCONFIG_PARSIFAL -o cxlsx_to_csv cxlsx_to_csv.c -lparsifal
+   or (to benchmark the time used by decompressing step)
+   cc -o cxlsx_to_csv cxlsx_to_csv.c
    
  Must be used with Expat compiled for UTF-8 output.
 
@@ -806,6 +808,7 @@ int main(int argc, char *argv[])
 
   // Process xl/sharedStrings.xml and load them into shr_str[]
   sheet_ptr = mz_zip_extract_archive_file_to_heap(argv[opt_if], "xl/sharedStrings.xml", &sheet_size, MZ_ZIP_FLAG_CASE_SENSITIVE);
+  //fprintf(stderr, "xl/sharedStrings.xml size:%d\n", sheet_size);
   if (sheet_ptr) {
     parse_ctx->xml_depth = 0;
 #ifdef CONFIG_EXPAT  
@@ -858,6 +861,7 @@ int main(int argc, char *argv[])
   // Process xl/worksheets/sheet1.xml and load them into sheet_tbl[,]
   sprintf(sheetname, "xl/worksheets/sheet%d.xml", opt_sh);
   sheet_ptr = mz_zip_extract_archive_file_to_heap(argv[opt_if], sheetname, &sheet_size, MZ_ZIP_FLAG_CASE_SENSITIVE);
+  //fprintf(stderr, "%s size:%d\n", sheetname, sheet_size);
   if (sheet_ptr) {
     parse_ctx->xml_depth = 0;
 #ifdef CONFIG_EXPAT  
