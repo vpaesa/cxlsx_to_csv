@@ -17,14 +17,15 @@ cxlsx_to_csv -if input.xlsx [-sh sheet_id] [-of output.csv]
 ```
 ###COMPILATION:
 It is possible to choose at compilation time from a number of XML parsing libraries:
-* [Expat](http://expat.sourceforge.net/)
-	`cc -DCONFIG_EXPAT -o cxlsx_to_csv cxlsx_to_csv.c -l expat`
-* [Parsifal](http://www.saunalahti.fi/~samiuus/toni/xmlproc/)
-	`cc -DCONFIG_MXML -o cxlsx_to_csv cxlsx_to_csv.c -l mxml`
-* [Mini-XML](http://www.msweet.org/projects.php?Z3))
-	`cc -DCONFIG_PARSIFAL -o cxlsx_to_csv cxlsx_to_csv.c -lparsifal`
-* If you choose no XML library, then you may benchmark the time used exclusively by the decompressing step:
-	`cc -o cxlsx_to_csv cxlsx_to_csv.c`
+* [Expat](http://expat.sourceforge.net/)  
+`cc -DCONFIG_EXPAT -o cxlsx_to_csv cxlsx_to_csv.c -l expat`
+* [Parsifal](http://www.saunalahti.fi/~samiuus/toni/xmlproc/)  
+`cc -DCONFIG_MXML -o cxlsx_to_csv cxlsx_to_csv.c -l mxml`
+* [Mini-XML](http://www.msweet.org/projects.php?Z3)  
+`cc -DCONFIG_PARSIFAL -o cxlsx_to_csv cxlsx_to_csv.c -lparsifal`  
+
+If you choose no XML library, then you may benchmark the time used exclusively by the decompressing step:  
+`cc -o cxlsx_to_csv cxlsx_to_csv.c`
 
 ###SPEED COMPARATION:
 * Tested under Ubuntu 15.10 on an Intel i3-3217U CPU @ 1.80GHz, with a Crucial CT120M500 SSD.
