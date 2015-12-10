@@ -5,7 +5,7 @@
 * Simple converter, pretty fast as done in C.
 * Only depends on [miniz](https://code.google.com/p/miniz/) (included for convenience) and one XML library, that can be either [Expat](http://expat.sourceforge.net/) or [Parsifal](http://www.saunalahti.fi/~samiuus/toni/xmlproc/) or [Mini-XML](http://www.msweet.org/projects.php?Z3).
 
-The .XLSX format is just a glorified .ZIP (that I open thanks to miniz), containing a set of .XML files (that I parse thanks to Expat or Mini-XML).
+The .XLSX format is just a glorified .ZIP (that I open thanks to miniz), containing a set of .XML files (that I parse thanks to Expat or Mini-XML or Parsifal).
 Notice that Excel stores dates as the number of days that have elapsed since 1-January-1900 (the Excel Epoch), and this program exports dates simply as the floating point value they are stored.
 
 ###SYNOPSIS:
@@ -20,9 +20,9 @@ It is possible to choose at compilation time from a number of XML parsing librar
 * [Expat](http://expat.sourceforge.net/)  
 `cc -DCONFIG_EXPAT -o cxlsx_to_csv cxlsx_to_csv.c -l expat`
 * [Parsifal](http://www.saunalahti.fi/~samiuus/toni/xmlproc/)  
-`cc -DCONFIG_MXML -o cxlsx_to_csv cxlsx_to_csv.c -l mxml`
-* [Mini-XML](http://www.msweet.org/projects.php?Z3)  
 `cc -DCONFIG_PARSIFAL -o cxlsx_to_csv cxlsx_to_csv.c -lparsifal`  
+* [Mini-XML](http://www.msweet.org/projects.php?Z3)  
+`cc -DCONFIG_MXML -o cxlsx_to_csv cxlsx_to_csv.c -l mxml`
 
 If you choose no XML library, then you may benchmark the time used exclusively by the decompressing step:  
 `cc -o cxlsx_to_csv cxlsx_to_csv.c`
