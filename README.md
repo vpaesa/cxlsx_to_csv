@@ -1,11 +1,11 @@
 #cxlsx_to_csv
-**cxlsx_to_csv is a simple converter of Excel 2007 files (a.k.a. Open Office XML) to .CSV**
+**cxlsx_to_csv is a simple converter of XLSX Excel 2007 files (a.k.a. Open Office XML) to CSV**
 
 ###FEATURES:
 * Simple converter, pretty fast as done in C.
 * Only depends on [miniz](https://code.google.com/p/miniz/) (included for convenience) and one XML library, that can be either [Expat](http://expat.sourceforge.net/) or [Parsifal](http://www.saunalahti.fi/~samiuus/toni/xmlproc/) or [Mini-XML](http://www.msweet.org/projects.php?Z3).
 
-The .XLSX format is just a glorified .ZIP (that I open thanks to miniz), containing a set of .XML files (that I parse thanks to Expat or Mini-XML or Parsifal).
+The XLSX format is just a glorified ZIP (that I open thanks to miniz), containing a set of XML files (that I parse thanks to Expat or Mini-XML or Parsifal).
 Notice that Excel stores dates as the number of days that have elapsed since 1-January-1900 (the Excel Epoch), and this program exports dates simply as the floating point value they are stored.
 
 ###SYNOPSIS:
