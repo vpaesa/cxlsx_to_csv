@@ -338,11 +338,11 @@ static void XMLCALL StartSharedStrings(void *data, const char *el, const char **
       if (!strcmp(attr[i], "uniqueCount")) {
         //fprintf(stderr, " %s='%s'\n", attr[i], attr[i + 1]);
         ctx->shr_str_cnt = atoi(attr[i + 1]);
-        ctx->shr_str = malloc(sizeof(char *) * ctx->shr_str_cnt);
+        ctx->shr_str = calloc(sizeof(char *), ctx->shr_str_cnt);
       }
     }
   }
-  if ((ctx->xml_depth == 2) && (!strcmp(el, "t"))) {
+  if (((ctx->xml_depth == 2)||(ctx->xml_depth == 3)) && (!strcmp(el, "t"))) {
     ctx->shr_tv = 1;
     ctx->shr_tv_val = ctx->shr_buff;
     *(ctx->shr_tv_val) = 0;
@@ -355,11 +355,26 @@ static void XMLCALL EndSharedStrings(void *data, const char *el)
   XLSXCtx *ctx = data;
 
   ctx->xml_depth--;
-  if ((ctx->xml_depth == 2) && (!strcmp(el, "t"))) {
+  // "t" at depth 3 are due to multiple styles in cell, and then we need to concat the substrings
+  if (((ctx->xml_depth == 2)||(ctx->xml_depth == 3)) && (!strcmp(el, "t"))) {
     ctx->shr_tv = 0;
-    ctx->shr_str[ctx->shr_str_num] = strdup(ctx->shr_buff);
-    ctx->shr_str_num++;
+    if (ctx->shr_str[ctx->shr_str_num]) {
+      int prevl, currl;
+      char *p;
+      prevl = strlen(ctx->shr_str[ctx->shr_str_num]);
+      currl = strlen(ctx->shr_buff);
+      p = malloc(sizeof(char) * (prevl + currl + 1));
+      memcpy(p, ctx->shr_str[ctx->shr_str_num], prevl);
+      memcpy(p + prevl, ctx->shr_buff, currl);
+      p[prevl + currl + 1] = 0;
+      free(ctx->shr_str[ctx->shr_str_num]);
+      ctx->shr_str[ctx->shr_str_num] = p;
+    }
+    else
+      ctx->shr_str[ctx->shr_str_num] = strdup(ctx->shr_buff);
   }
+  if ((ctx->xml_depth == 1) && (!strcmp(el, "si")))
+    ctx->shr_str_num++;
 }
 
 static void XMLCALL ChrHndlr(void *data, const char *s, int len)
