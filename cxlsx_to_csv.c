@@ -96,8 +96,8 @@ typedef struct XLSXCtx XLSXCtx;
 struct XLSXCtx {
   FILE  *outf;
   int    xml_depth;      /* Current dept while parsing the XML tree */
-  char **shr_str;
-  int    shr_str_num, shr_str_cnt;
+  char **shrdstr_array;
+  int    shrdstr_num, shrdstr_cnt;
   int    sheet_num_rows, sheet_num_cols;
   int    current_row, current_col, expected_col;
   int    lookup_v;
@@ -106,9 +106,9 @@ struct XLSXCtx {
   XMLCH *sheet_end_ptr;
 #endif /* CONFIG_PARSIFAL */
 #ifndef CONFIG_MXML
-  char  *shr_tv_val;
-  int    shr_tv;
-  char   shr_buff[BUFFSIZE];
+  char  *shrdstr_tv_val;
+  int    shrdstr_tv;
+  char   shrdstr_buff[BUFFSIZE];
 #endif /* Not(CONFIG_MXML) = CONFIG_EXPAT || CONFIG_PARSIFAL */
 };
 
@@ -337,15 +337,15 @@ static void XMLCALL StartSharedStrings(void *data, const char *el, const char **
     for (i = 0; attr[i]; i += 2) {
       if (!strcmp(attr[i], "uniqueCount")) {
         //fprintf(stderr, " %s='%s'\n", attr[i], attr[i + 1]);
-        ctx->shr_str_cnt = atoi(attr[i + 1]);
-        ctx->shr_str = calloc(sizeof(char *), ctx->shr_str_cnt);
+        ctx->shrdstr_cnt = atoi(attr[i + 1]);
+        ctx->shrdstr_array = calloc(sizeof(char *), ctx->shrdstr_cnt);
       }
     }
   }
   if (((ctx->xml_depth == 2)||(ctx->xml_depth == 3)) && (!strcmp(el, "t"))) {
-    ctx->shr_tv = 1;
-    ctx->shr_tv_val = ctx->shr_buff;
-    *(ctx->shr_tv_val) = 0;
+    ctx->shrdstr_tv = 1;
+    ctx->shrdstr_tv_val = ctx->shrdstr_buff;
+    *(ctx->shrdstr_tv_val) = 0;
   }
   ctx->xml_depth++;
 }
@@ -357,24 +357,24 @@ static void XMLCALL EndSharedStrings(void *data, const char *el)
   ctx->xml_depth--;
   // "t" at depth 3 are due to multiple styles in cell, and then we need to concat the substrings
   if (((ctx->xml_depth == 2)||(ctx->xml_depth == 3)) && (!strcmp(el, "t"))) {
-    ctx->shr_tv = 0;
-    if (ctx->shr_str[ctx->shr_str_num]) {
+    ctx->shrdstr_tv = 0;
+    if (ctx->shrdstr_array[ctx->shrdstr_num]) {
       int prevl, currl;
       char *p;
-      prevl = strlen(ctx->shr_str[ctx->shr_str_num]);
-      currl = strlen(ctx->shr_buff);
+      prevl = strlen(ctx->shrdstr_array[ctx->shrdstr_num]);
+      currl = strlen(ctx->shrdstr_buff);
       p = malloc(sizeof(char) * (prevl + currl + 1));
-      memcpy(p, ctx->shr_str[ctx->shr_str_num], prevl);
-      memcpy(p + prevl, ctx->shr_buff, currl);
+      memcpy(p, ctx->shrdstr_array[ctx->shrdstr_num], prevl);
+      memcpy(p + prevl, ctx->shrdstr_buff, currl);
       p[prevl + currl + 1] = 0;
-      free(ctx->shr_str[ctx->shr_str_num]);
-      ctx->shr_str[ctx->shr_str_num] = p;
+      free(ctx->shrdstr_array[ctx->shrdstr_num]);
+      ctx->shrdstr_array[ctx->shrdstr_num] = p;
     }
     else
-      ctx->shr_str[ctx->shr_str_num] = strdup(ctx->shr_buff);
+      ctx->shrdstr_array[ctx->shrdstr_num] = strdup(ctx->shrdstr_buff);
   }
   if ((ctx->xml_depth == 1) && (!strcmp(el, "si")))
-    ctx->shr_str_num++;
+    ctx->shrdstr_num++;
 }
 
 static void XMLCALL ChrHndlr(void *data, const char *s, int len)
@@ -382,13 +382,13 @@ static void XMLCALL ChrHndlr(void *data, const char *s, int len)
   char *src;
   XLSXCtx *ctx = data;
 
-  if (ctx->shr_tv) {
+  if (ctx->shrdstr_tv) {
     src = (char *) s;
     while (len) {
-      *(ctx->shr_tv_val)++ = *src++;
+      *(ctx->shrdstr_tv_val)++ = *src++;
       len--;
     }
-    *(ctx->shr_tv_val) = 0;
+    *(ctx->shrdstr_tv_val) = 0;
   }
 }
 
@@ -435,9 +435,9 @@ static void XMLCALL StartSheet(void *data, const char *el, const char **attr)
     }
   }
   if ((ctx->xml_depth == 4) && (*el == 'v') && (el[1] == '\0')) {
-    ctx->shr_tv = 1;
-    ctx->shr_tv_val = ctx->shr_buff;
-    *(ctx->shr_tv_val) = 0;
+    ctx->shrdstr_tv = 1;
+    ctx->shrdstr_tv_val = ctx->shrdstr_buff;
+    *(ctx->shrdstr_tv_val) = 0;
   }
   ctx->xml_depth++;
 }
@@ -449,14 +449,14 @@ static void XMLCALL EndSheet(void *data, const char *el)
 
   ctx->xml_depth--;
   if ((ctx->xml_depth == 4) && (*el == 'v') && (el[1] == '\0')) {
-    ctx->shr_tv = 0;
+    ctx->shrdstr_tv = 0;
     if (ctx->lookup_v) {
-      //fprintf(stderr, "v %s\n", ctx->shr_str[atoi(ctx->shr_buff)]);
-      output_csv(ctx->outf, ',', ctx->shr_str[atoi(ctx->shr_buff)], (ctx->current_col < ctx->sheet_num_cols));
+      //fprintf(stderr, "v %s\n", ctx->shrdstr_array[atoi(ctx->shrdstr_buff)]);
+      output_csv(ctx->outf, ',', ctx->shrdstr_array[atoi(ctx->shrdstr_buff)], (ctx->current_col < ctx->sheet_num_cols));
     }
     else {
-      //fprintf(stderr, "v %s\n", ctx->shr_buff);
-      output_csv(ctx->outf, ',', ctx->shr_buff, (ctx->current_col < ctx->sheet_num_cols));
+      //fprintf(stderr, "v %s\n", ctx->shrdstr_buff);
+      output_csv(ctx->outf, ',', ctx->shrdstr_buff, (ctx->current_col < ctx->sheet_num_cols));
     }
   }
   if ((ctx->xml_depth == 2) && (!strcmp(el, "row"))) {
@@ -481,8 +481,8 @@ static void SharedStrings(mxml_node_t *node, mxml_sax_event_t event, void *data)
         uniqueCount = mxmlElementGetAttr(node, "uniqueCount");
         if (uniqueCount) {
           //fprintf(stderr, " uniqueCount='%s'\n", uniqueCount);
-          ctx->shr_str_cnt = atoi(uniqueCount);
-          ctx->shr_str = malloc(sizeof(char *) * ctx->shr_str_cnt);
+          ctx->shrdstr_cnt = atoi(uniqueCount);
+          ctx->shrdstr_array = malloc(sizeof(char *) * ctx->shrdstr_cnt);
         }
       }
     }
@@ -494,9 +494,9 @@ static void SharedStrings(mxml_node_t *node, mxml_sax_event_t event, void *data)
       el = mxmlGetElement(mxmlGetParent(node));
       if (!strcmp(el, "t")) {
         value = mxmlGetOpaque(mxmlGetParent(node));
-        //fprintf(stderr, " shrStr[%d]='%s'\n", ctx->shr_str_num, value);
-        ctx->shr_str[ctx->shr_str_num] = strdup(value);
-        ctx->shr_str_num++;
+        //fprintf(stderr, " shrStr[%d]='%s'\n", ctx->shrdstr_num, value);
+        ctx->shrdstr_array[ctx->shrdstr_num] = strdup(value);
+        ctx->shrdstr_num++;
       }
     }
   }
@@ -555,8 +555,8 @@ static void Sheet(mxml_node_t *node, mxml_sax_event_t event, void *data)
       if (!strcmp(el, "v")) {
         value = mxmlGetOpaque(mxmlGetParent(node));
         if (ctx->lookup_v) {
-          //fprintf(stderr, "v %s\n", ctx->shr_str[atoi(value)]);
-          output_csv(ctx->outf, ',', ctx->shr_str[atoi(value)], (ctx->current_col < ctx->sheet_num_cols));
+          //fprintf(stderr, "v %s\n", ctx->shrdstr_array[atoi(value)]);
+          output_csv(ctx->outf, ',', ctx->shrdstr_array[atoi(value)], (ctx->current_col < ctx->sheet_num_cols));
         }
         else {
           //fprintf(stderr, "v %s\n", value);
@@ -592,15 +592,15 @@ int StartSharedStrings(void *data, const XMLCH *uri, const XMLCH *localName, con
       att = (LPXMLRUNTIMEATT) XMLVector_Get(atts, i);
       if (!strcmp(att->qname, "uniqueCount")) {
         //fprintf(stderr, " %s='%s'\n", att->qname, att->value);
-        ctx->shr_str_cnt = atoi(att->value);
-        ctx->shr_str = malloc(sizeof(char *) * ctx->shr_str_cnt);
+        ctx->shrdstr_cnt = atoi(att->value);
+        ctx->shrdstr_array = malloc(sizeof(char *) * ctx->shrdstr_cnt);
       }
     }
   }
   if ((ctx->xml_depth == 2) && (!strcmp(el, "t"))) {
-    ctx->shr_tv = 1;
-    ctx->shr_tv_val = ctx->shr_buff;
-    *(ctx->shr_tv_val) = 0;
+    ctx->shrdstr_tv = 1;
+    ctx->shrdstr_tv_val = ctx->shrdstr_buff;
+    *(ctx->shrdstr_tv_val) = 0;
   }
   ctx->xml_depth++;
   return 0;
@@ -612,9 +612,9 @@ int EndSharedStrings(void *data, const XMLCH *uri, const XMLCH *localName, const
 
   ctx->xml_depth--;
   if ((ctx->xml_depth == 2) && (!strcmp(el, "t"))) {
-    ctx->shr_tv = 0;
-    ctx->shr_str[ctx->shr_str_num] = strdup(ctx->shr_buff);
-    ctx->shr_str_num++;
+    ctx->shrdstr_tv = 0;
+    ctx->shrdstr_array[ctx->shrdstr_num] = strdup(ctx->shrdstr_buff);
+    ctx->shrdstr_num++;
   }
   return 0;
 }
@@ -624,13 +624,13 @@ int ChrHndlr(void *data, const XMLCH *s, int len)
   XMLCH *src;
   XLSXCtx *ctx = data;
 
-  if (ctx->shr_tv) {
+  if (ctx->shrdstr_tv) {
     src = (XMLCH *) s;
     while (len) {
-      *(ctx->shr_tv_val)++ = *src++;
+      *(ctx->shrdstr_tv_val)++ = *src++;
       len--;
     }
-    *(ctx->shr_tv_val) = 0;
+    *(ctx->shrdstr_tv_val) = 0;
   }
   return 0;
 }
@@ -681,9 +681,9 @@ int StartSheet(void *data, const XMLCH *uri, const XMLCH *localName, const XMLCH
     }
   }
   if ((ctx->xml_depth == 4) && (*el == 'v') && (el[1] == '\0')) {
-    ctx->shr_tv = 1;
-    ctx->shr_tv_val = ctx->shr_buff;
-    *(ctx->shr_tv_val) = 0;
+    ctx->shrdstr_tv = 1;
+    ctx->shrdstr_tv_val = ctx->shrdstr_buff;
+    *(ctx->shrdstr_tv_val) = 0;
   }
   ctx->xml_depth++;
   return 0;
@@ -696,14 +696,14 @@ int EndSheet(void *data, const XMLCH *uri, const XMLCH *localName, const XMLCH *
 
   ctx->xml_depth--;
   if ((ctx->xml_depth == 4) && (*el == 'v') && (el[1] == '\0')) {
-    ctx->shr_tv = 0;
+    ctx->shrdstr_tv = 0;
     if (ctx->lookup_v) {
-      //fprintf(stderr, "v %s\n", ctx->shr_str[atoi(ctx->shr_buff)]);
-      output_csv(ctx->outf, ',', ctx->shr_str[atoi(ctx->shr_buff)], (ctx->current_col < ctx->sheet_num_cols));
+      //fprintf(stderr, "v %s\n", ctx->shrdstr_array[atoi(ctx->shrdstr_buff)]);
+      output_csv(ctx->outf, ',', ctx->shrdstr_array[atoi(ctx->shrdstr_buff)], (ctx->current_col < ctx->sheet_num_cols));
     }
     else {
-      //fprintf(stderr, "v %s\n", ctx->shr_buff);
-      output_csv(ctx->outf, ',', ctx->shr_buff, (ctx->current_col < ctx->sheet_num_cols));
+      //fprintf(stderr, "v %s\n", ctx->shrdstr_buff);
+      output_csv(ctx->outf, ',', ctx->shrdstr_buff, (ctx->current_col < ctx->sheet_num_cols));
     }
   }
   if ((ctx->xml_depth == 2) && (!strcmp(el, "row"))) {
@@ -821,7 +821,7 @@ int main(int argc, char *argv[])
     }
   }
 
-  // Process xl/sharedStrings.xml and load them into shr_str[]
+  // Process xl/sharedStrings.xml and load them into shrdstr_array[]
   sheet_ptr = mz_zip_extract_archive_file_to_heap(argv[opt_if], "xl/sharedStrings.xml", &sheet_size, MZ_ZIP_FLAG_CASE_SENSITIVE);
   //fprintf(stderr, "xl/sharedStrings.xml size:%d\n", sheet_size);
   if (sheet_ptr) {
@@ -842,8 +842,8 @@ int main(int argc, char *argv[])
       exit(-1);
     }
     XML_ParserFree(p);
-    //for (i = 0; i < ctx->shr_str_cnt; i++)
-    //  printf("%s\n", ctx->shr_str[i]);
+    //for (i = 0; i < ctx->shrdstr_cnt; i++)
+    //  printf("%s\n", ctx->shrdstr_array[i]);
 #endif /* CONFIG_EXPAT */
 #ifdef CONFIG_MXML
     root_node = mxmlSAXLoadString(NULL, sheet_ptr, MXML_OPAQUE_CALLBACK, SharedStrings, parse_ctx);
@@ -880,7 +880,7 @@ int main(int argc, char *argv[])
   if (sheet_ptr) {
     parse_ctx->xml_depth = 0;
 #ifdef CONFIG_EXPAT  
-    parse_ctx->shr_tv = 0;
+    parse_ctx->shrdstr_tv = 0;
     p = XML_ParserCreate(NULL);
     if (!p) {
       fprintf(stderr, "Couldn't allocate memory for parser\n");
