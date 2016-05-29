@@ -106,8 +106,9 @@ struct XLSXCtx {
   XMLCH *sheet_end_ptr;
 #endif /* CONFIG_PARSIFAL */
 #ifndef CONFIG_MXML
-  char  *shrdstr_tv_val;
-  int    shrdstr_tv;
+  int    shrdstr_tv;     /* Flag to look for a shared string when inside a <t> or <v> element */
+  char  *shrdstr_tv_val; /* Value of a shared string when inside a <t> element in xl/sharedStrings.xml */
+                         /* or Index of a shared string when inside a <v> element in xl/worksheets/sheet1.xml */
   char   shrdstr_buff[BUFFSIZE];
 #endif /* Not(CONFIG_MXML) = CONFIG_EXPAT || CONFIG_PARSIFAL */
 };
