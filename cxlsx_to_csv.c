@@ -129,6 +129,8 @@ struct XLSXCtx {
   The name of each sheet is in xl/workbook.xml
   The individual sheets are kept in xl/worksheets/sheet1.xml
   To save on space, Microsoft stores all the character literal values in one common xl/sharedStrings.xml dictionary file. The individual cell value found for this string in the actual sheet1.xml file is just an index into this dictionary.
+  OLEDB created xlsx use inline strings instead of shared ones.
+  Some brief tutorial: http://openxmldeveloper.org/files/1928/download.aspx
   Dates are stored as day number since 1900/01/01.
   Time portion of the date is stored as a fraction of a day, so it has to be multiplied by 60*60*24 (86400) to get the actual number os seconds.
   Microsoft does not store empty cells or rows in xl/worksheets/sheet1.xml, so any gaps between values have to be taken care by the code.
@@ -189,15 +191,21 @@ unzip -c 3x2.xlsx xl/worksheets/sheet1.xml | tidy -indent -xml
         <v>3</v>
       </c>
     </row>
-    <row r="3" spans="1:3">
-      <c r="A3" t="s">
-        <v>4</v>
+    <row r="3">
+      <c r="A3" t="inlineStr">
+        <is>
+          <t>some value</t>
+        </is>
       </c>
-      <c r="B3" t="s">
-        <v>4</v>
+      <c r="B4" t="inlineStr">
+        <is>
+          <t>some other value</t>
+        </is>
       </c>
-      <c r="C3" t="s">
-        <v>4</v>
+      <c r="C4" t="inlineStr">
+        <is>
+          <t>yet some value</t>
+        </is>
       </c>
     </row>
   </sheetData>
