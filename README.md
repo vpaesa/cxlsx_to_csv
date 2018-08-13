@@ -27,7 +27,7 @@ It is possible to choose at compilation time from a number of XML parsing librar
 If you choose no XML library, then you may benchmark the time used exclusively by the decompressing step:  
 `cc -o cxlsx_to_csv cxlsx_to_csv.c`
 
-### SPEED COMPARATION:
+### SPEED COMPARISON:
 * Tested under Ubuntu 15.10 on an Intel i3-3217U CPU @ 1.80GHz, with a Crucial CT120M500 SSD.
 * Locale set to LC_ALL=C.UTF-8
 * The input spreadsheet `a.xlsx` has 48665 rows and 46 columns, and weights 9165KB.
