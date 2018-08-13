@@ -1,21 +1,21 @@
-#cxlsx_to_csv
+# cxlsx_to_csv
 **cxlsx_to_csv is a simple converter of XLSX Excel 2007 files (a.k.a. Open Office XML) to CSV**
 
-###FEATURES:
+### FEATURES:
 * Simple converter, pretty fast as done in C.
 * Only depends on [miniz](https://code.google.com/p/miniz/) (included for convenience) and one XML library, that can be either [Expat](http://expat.sourceforge.net/) or [Parsifal](http://www.saunalahti.fi/~samiuus/toni/xmlproc/) or [Mini-XML](http://www.msweet.org/projects.php?Z3).
 
 The XLSX format is just a glorified ZIP (that I open thanks to miniz), containing a set of XML files (that I parse thanks to Expat or Mini-XML or Parsifal).
 Notice that Excel stores dates as the number of days that have elapsed since 1-January-1900 (the Excel Epoch), and this program exports dates simply as the floating point value they are stored.
 
-###SYNOPSIS:
+### SYNOPSIS:
 ```
 cxlsx_to_csv -if input.xlsx [-sh sheet_id] [-of output.csv]
     input.xlsx  input spreadsheet in Excel 2007 format (Office Open XML)
     sheet_id    number of the sheet within the workbook (default is first one)
     output.csv  output CSV file (default is STDOUT)
 ```
-###COMPILATION:
+### COMPILATION:
 It is possible to choose at compilation time from a number of XML parsing libraries:
 * [Expat](http://expat.sourceforge.net/)  
 `cc -DCONFIG_EXPAT -o cxlsx_to_csv cxlsx_to_csv.c -l expat`
@@ -27,7 +27,7 @@ It is possible to choose at compilation time from a number of XML parsing librar
 If you choose no XML library, then you may benchmark the time used exclusively by the decompressing step:  
 `cc -o cxlsx_to_csv cxlsx_to_csv.c`
 
-###SPEED COMPARATION:
+### SPEED COMPARATION:
 * Tested under Ubuntu 15.10 on an Intel i3-3217U CPU @ 1.80GHz, with a Crucial CT120M500 SSD.
 * Locale set to LC_ALL=C.UTF-8
 * The input spreadsheet `a.xlsx` has 48665 rows and 46 columns, and weights 9165KB.
